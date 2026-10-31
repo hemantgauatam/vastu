@@ -1,0 +1,38 @@
+{
+  "users": [],
+  "orders": [],
+  "remedies": [
+    {
+      "id": "wealth-kalash",
+      "title": "Wealth Kalash",
+      "subtitle": "North prosperity balancing kit",
+      "direction": "North",
+      "purpose": "Prosperity and steady opportunities",
+      "price": 799
+    },
+    {
+      "id": "agni-copper",
+      "title": "Agni Copper Set",
+      "subtitle": "Southeast fire element support",
+      "direction": "Southeast",
+      "purpose": "Energy, kitchen harmony, and transformation",
+      "price": 1199
+    },
+    {
+      "id": "ishanya-crystal",
+      "title": "Ishanya Crystal",
+      "subtitle": "Northeast clarity and prayer corner remedy",
+      "direction": "Northeast",
+      "purpose": "Clarity, devotion, and peaceful study",
+      "price": 999
+    },
+    {
+      "id": "vayu-bells",
+      "title": "Vayu Bells",
+      "subtitle": "Northwest movement and relationship remedy",
+      "direction": "Northwest",
+      "purpose": "Supportive relationships and better flow",
+      "price": 699
+    }
+  ]
+}
