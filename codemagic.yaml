@@ -1,0 +1,19 @@
+workflows:
+  app-store-screenshots:
+    name: App Store screenshots (iPhone and iPad)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install Flutter dependencies
+        script: flutter pub get
+      - name: Capture iPhone and iPad screens
+        script: python3 scripts/capture_store_screenshots.py
+    artifacts:
+      - build/store-screenshots/**/*.png
+      - build/store-screenshots/manifest.json
+      - build/store-screenshots.zip
+      - /tmp/xcodebuild_logs/*.log
