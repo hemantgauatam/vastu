@@ -1076,6 +1076,7 @@ header("Permissions-Policy: camera=(), microphone=(), geolocation=()");
                 <h3>${escapeHtml(review.name || "User")} - ${escapeHtml(stars)}</h3>
                 <p class="muted">Status: ${escapeHtml(review.status || "pending")} | ${formatDate(review.createdAt)}</p>
                 <p style="margin-top: 8px">${escapeHtml(review.review || "")}</p>
+                ${(review.reports || []).map(report => `<p class="muted">Reported: ${escapeHtml(report.reason)} (${formatDate(report.createdAt)})</p>`).join("")}
               </div>
             </div>
             <div class="actions" style="margin-top: 10px">

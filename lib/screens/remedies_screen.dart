@@ -6,6 +6,7 @@ import '../models/remedy_data.dart';
 import '../services/account_storage.dart';
 import '../services/backend_api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/remedy_image_carousel.dart';
 
 class _RemedyNetworkImage extends StatelessWidget {
   final String url;
@@ -286,11 +287,15 @@ class _RemedyCard extends StatelessWidget {
                         color: const Color(0xFFF8F6F0),
                         child: remedy.imageUrls.isEmpty
                             ? _ProductPlaceholder(remedy: remedy)
-                            : _RemedyNetworkImage(
-                                url: remedy.imageUrls.first,
-                                fit: BoxFit.contain,
-                                errorWidget: (_, __, ___) =>
-                                    _ProductPlaceholder(remedy: remedy),
+                            : RemedyImageCarousel(
+                                key: ValueKey(remedy.id),
+                                images: remedy.imageUrls,
+                                imageBuilder: (_, url) => _RemedyNetworkImage(
+                                  url: url,
+                                  fit: BoxFit.contain,
+                                  errorWidget: (_, __, ___) =>
+                                      _ProductPlaceholder(remedy: remedy),
+                                ),
                               ),
                       ),
                     ),

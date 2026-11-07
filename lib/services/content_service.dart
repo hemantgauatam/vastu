@@ -89,6 +89,57 @@ class ContentService {
     );
   }
 
+  static const _blockedKey = 'kubar.blockedAuthors.v1';
+  static const _hiddenKey = 'kubar.hiddenReviews.v1';
+
+  Future<List<Testimonial>> visibleTestimonials(List<Testimonial> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList(_blockedKey) ?? [];
+    final hidden = prefs.getStringList(_hiddenKey) ?? [];
+    return items
+        .where((item) =>
+            !hidden.contains(item.id) &&
+            (item.authorId.isEmpty || !blocked.contains(item.authorId)))
+        .toList();
+  }
+
+  Future<void> blockAuthor(Testimonial item) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = item.authorId.isEmpty ? _hiddenKey : _blockedKey;
+    final value = item.authorId.isEmpty ? item.id : item.authorId;
+    final items = {...?prefs.getStringList(key), value};
+    if (!await prefs.setStringList(key, items.toList())) {
+      throw const ContentException('Unable to save blocked contributor');
+    }
+  }
+
+  Future<Map<String, String>> _authHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('divinewall.sessionToken.v1');
+    if (token == null || token.isEmpty) {
+      throw const ContentException('Please log in from Profile to continue.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token'
+    };
+  }
+
+  Future<void> reportTestimonial(Testimonial item, String reason) async {
+    final headers = await _authHeaders();
+    final uri = Uri.parse(
+        '${BackendApi.baseUrl.replaceFirst(RegExp(r'/$'), '')}/api/testimonials/${Uri.encodeComponent(item.id)}/report');
+    final response = await _client
+        .post(uri, headers: headers, body: jsonEncode({'reason': reason}))
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const ContentException('Unable to send report. Please try again.');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        _hiddenKey, {...?prefs.getStringList(_hiddenKey), item.id}.toList());
+  }
+
   Future<void> submitFeedback({
     required String name,
     required int rating,
@@ -97,10 +148,11 @@ class ContentService {
     final uri = Uri.parse(
       '${BackendApi.baseUrl.replaceFirst(RegExp(r'/$'), '')}/api/testimonials',
     );
+    final headers = await _authHeaders();
     final response = await _client
         .post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: jsonEncode({'name': name, 'rating': rating, 'review': review}),
         )
         .timeout(const Duration(seconds: 10));

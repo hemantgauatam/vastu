@@ -106,6 +106,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _buildProfile(profile),
                         const SizedBox(height: 16),
                         _buildPurchases(),
+                        const SizedBox(height: 16),
+                        TextButton.icon(
+                          onPressed: _saving ? null : _deleteAccount,
+                          icon: const Icon(Icons.delete_forever,
+                              color: Colors.red),
+                          label: const Text('Delete account',
+                              style: TextStyle(color: Colors.red)),
+                        ),
                       ],
                     ],
                   ),
@@ -116,6 +124,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  Future<void> _deleteAccount() async {
+    final password = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permanently delete account?'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text(
+              'Your account, reviews, order history and saved cart will be removed. This cannot be undone. Enter your password to confirm.'),
+          const SizedBox(height: 12),
+          TextField(
+              controller: password,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Password')),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete account')),
+        ],
+      ),
+    );
+    final value = password.text;
+    password.dispose();
+    if (confirmed != true || !mounted) return;
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Enter your password to delete your account.')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.account.deleteAccount(value);
+      for (final field in [
+        _name,
+        _email,
+        _phone,
+        _place,
+        _username,
+        _password,
+        _confirmPassword
+      ]) {
+        field.clear();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Your account has been deleted.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Account could not be deleted: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Widget _buildUpdateCard() {
@@ -408,7 +477,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               alignment: Alignment.center,
               decoration: AppTheme.insetPanelDecoration(radius: 10),
               child: Text(
-                'Logout',
+                _saving ? 'Please wait...' : 'Logout',
                 style: AppTheme.uiText(size: 13, weight: FontWeight.w600),
               ),
             ),

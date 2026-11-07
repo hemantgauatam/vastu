@@ -188,7 +188,9 @@ class AccountStorage extends ChangeNotifier {
   static const _tokenKey = 'divinewall.sessionToken.v1';
   static const _cartKey = 'divinewall.cart.v1';
 
-  final BackendApi _api = BackendApi();
+  final BackendApi _api;
+
+  AccountStorage({BackendApi? api}) : _api = api ?? BackendApi();
 
   UserProfile? _profile;
   List<RemedyOrder> _orders = [];
@@ -415,6 +417,19 @@ class AccountStorage extends ChangeNotifier {
     notifyListeners();
     await Future.wait([_persistOrders(), _persistCart()]);
     return true;
+  }
+
+  Future<void> deleteAccount(String password) async {
+    final token = _token;
+    if (token == null || token.isEmpty) throw Exception('Please login first');
+    // Never clear the session unless the server confirms deletion.
+    await _api.deleteAccount(token, password);
+    _token = null;
+    _cart.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('kubar.content.v1.testimonials');
+    await signOut();
+    await _persistCart();
   }
 
   Future<void> signOut() async {

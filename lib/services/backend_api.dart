@@ -55,6 +55,11 @@ class BackendApi {
     );
   }
 
+  Future<void> deleteAccount(String token, String password) async {
+    if (!enabled) throw Exception('Account service is unavailable');
+    await _request('DELETE', '/api/me', {'password': password}, token);
+  }
+
   Future<void> logout(String token) async {
     if (!enabled || token.trim().isEmpty) return;
     await _request(

@@ -112,7 +112,8 @@ class _CommunityScreenState extends State<CommunityScreen>
       });
     }
     try {
-      final value = await _service.fetchTestimonials(refresh: refresh);
+      final value = await _service.visibleTestimonials(
+          await _service.fetchTestimonials(refresh: refresh));
       if (mounted) setState(() => _testimonials = value);
     } catch (error) {
       if (mounted) setState(() => _testimonialError = '$error');
@@ -275,10 +276,69 @@ class _CommunityScreenState extends State<CommunityScreen>
             else if (_testimonials.isEmpty)
               const _StateView(message: 'No approved testimonials yet.')
             else
-              _AutoTestimonials(items: _testimonials),
+              _AutoTestimonials(
+                  items: _testimonials, onModerate: _moderateReview),
           ],
         ),
       );
+
+  Future<void> _moderateReview(Testimonial item, bool report) async {
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: Text(report
+                  ? 'Report review'
+                  : item.authorId.isEmpty
+                      ? 'Hide review'
+                      : 'Block contributor'),
+              content: report
+                  ? TextField(
+                      controller: reason,
+                      maxLength: 500,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                          labelText: 'Reason for reporting'))
+                  : Text(item.authorId.isEmpty
+                      ? 'This older review has no linked account. Hide this review on this device?'
+                      : 'Hide all reviews from this contributor on this device?'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text(report ? 'Send report' : 'Confirm')),
+              ],
+            ));
+    final text = reason.text.trim();
+    reason.dispose();
+    if (confirmed != true || !mounted) return;
+    if (report && text.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please provide a reason of at least 3 characters.')));
+      return;
+    }
+    try {
+      if (report) {
+        await _service.reportTestimonial(item, text);
+      } else {
+        await _service.blockAuthor(item);
+      }
+      final visible = await _service.visibleTestimonials(_testimonials);
+      if (!mounted) return;
+      setState(() => _testimonials = visible);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(report
+              ? 'Report sent for moderation. The review has been hidden.'
+              : 'Content hidden on this device.')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
 
   void _openVideo(VideoItem video) {
     Navigator.of(context).push(_premiumRoute(VideoPlayerScreen(video: video)));
@@ -288,12 +348,15 @@ class _CommunityScreenState extends State<CommunityScreen>
     final name = TextEditingController();
     final review = TextEditingController();
     var rating = 5;
+    var accepted = false;
+    var sending = false;
     final submitted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (_, setDialogState) => AlertDialog(
           title: Text('Write Review', style: AppTheme.divineTitle(size: 24)),
-          content: Column(
+          content: SingleChildScrollView(
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -313,37 +376,57 @@ class _CommunityScreenState extends State<CommunityScreen>
                         )),
               ),
               TextField(
+                maxLength: 1200,
                 controller: review,
                 minLines: 3,
                 maxLines: 5,
                 decoration: AppTheme.inputDecoration(label: 'Your experience'),
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: accepted,
+                onChanged: sending
+                    ? null
+                    : (value) =>
+                        setDialogState(() => accepted = value ?? false),
+                title: const Text(
+                    'I agree not to post abusive, hateful, illegal or misleading content. Reviews are moderated before publication.',
+                    style: TextStyle(fontSize: 12)),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
             ],
-          ),
+          )),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed:
+                    sending ? null : () => Navigator.pop(dialogContext, false),
                 child: const Text('Cancel')),
             FilledButton(
-              onPressed: () async {
-                if (name.text.trim().isEmpty ||
-                    review.text.trim().length < 10) {
-                  return;
-                }
-                try {
-                  await _service.submitFeedback(
-                      name: name.text.trim(),
-                      rating: rating,
-                      review: review.text.trim());
-                  if (dialogContext.mounted) Navigator.pop(dialogContext, true);
-                } catch (error) {
-                  if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext)
-                        .showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              child: const Text('Submit'),
+              onPressed: !accepted || sending
+                  ? null
+                  : () async {
+                      if (name.text.trim().isEmpty ||
+                          review.text.trim().length < 10) {
+                        return;
+                      }
+                      setDialogState(() => sending = true);
+                      try {
+                        await _service.submitFeedback(
+                            name: name.text.trim(),
+                            rating: rating,
+                            review: review.text.trim());
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => sending = false);
+                          ScaffoldMessenger.of(dialogContext)
+                              .showSnackBar(SnackBar(content: Text('$error')));
+                        }
+                      }
+                    },
+              child: Text(sending ? 'Submitting...' : 'Submit'),
             ),
           ],
         ),
@@ -555,13 +638,25 @@ class _BlogCard extends StatelessWidget {
 
 class _AutoTestimonials extends StatefulWidget {
   final List<Testimonial> items;
-  const _AutoTestimonials({required this.items});
+  final Future<void> Function(Testimonial, bool) onModerate;
+  const _AutoTestimonials({required this.items, required this.onModerate});
   @override
   State<_AutoTestimonials> createState() => _AutoTestimonialsState();
 }
 
 class _AutoTestimonialsState extends State<_AutoTestimonials> {
   final PageController _page = PageController(viewportFraction: .9);
+  @override
+  void didUpdateWidget(covariant _AutoTestimonials oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items != widget.items) {
+      _index = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _page.hasClients) _page.jumpToPage(0);
+      });
+    }
+  }
+
   Timer? _timer;
   int _index = 0;
   @override
@@ -585,7 +680,7 @@ class _AutoTestimonialsState extends State<_AutoTestimonials> {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-      height: 260,
+      height: 310,
       child: PageView.builder(
         controller: _page,
         itemCount: widget.items.length,
@@ -614,7 +709,22 @@ class _AutoTestimonialsState extends State<_AutoTestimonials> {
                         Expanded(
                             child: Text(item.name,
                                 style: AppTheme.uiText(
-                                    size: 15, weight: FontWeight.w800)))
+                                    size: 15, weight: FontWeight.w800))),
+                        PopupMenuButton<bool>(
+                          tooltip: 'Review options',
+                          onOpened: () => _timer?.cancel(),
+                          onSelected: (report) =>
+                              widget.onModerate(item, report),
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                                value: true, child: Text('Report review')),
+                            PopupMenuItem(
+                                value: false,
+                                child: Text(item.authorId.isEmpty
+                                    ? 'Hide review'
+                                    : 'Block contributor')),
+                          ],
+                        ),
                       ]),
                       const SizedBox(height: 12),
                       Row(

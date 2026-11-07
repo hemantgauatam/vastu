@@ -67,6 +67,7 @@ class BlogPost {
 }
 
 class Testimonial {
+  final String authorId;
   final String id;
   final String name;
   final String profileImageUrl;
@@ -75,6 +76,7 @@ class Testimonial {
   final DateTime? createdAt;
 
   const Testimonial({
+    this.authorId = '',
     required this.id,
     required this.name,
     required this.profileImageUrl,
@@ -84,6 +86,7 @@ class Testimonial {
   });
 
   factory Testimonial.fromJson(Map<String, dynamic> json) => Testimonial(
+        authorId: json['authorId'] as String? ?? '',
         id: json['id'] as String? ?? json['_id'] as String? ?? '',
         name: json['name'] as String? ?? 'Kuber Vastu client',
         profileImageUrl: json['profileImageUrl'] as String? ?? '',
@@ -94,6 +97,7 @@ class Testimonial {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'authorId': authorId,
         'name': name,
         'profileImageUrl': profileImageUrl,
         'rating': rating,

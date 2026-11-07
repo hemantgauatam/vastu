@@ -217,6 +217,7 @@ const blogSchema = new mongoose.Schema(
 
 const testimonialSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     name: { type: String, required: true, trim: true },
     profileImageUrl: { type: String, default: "", trim: true },
     rating: { type: Number, min: 1, max: 5, default: 5 },
@@ -250,6 +251,13 @@ const Purchase = mongoose.model("Purchase", purchaseSchema);
 const AppUpdate = mongoose.model("AppUpdate", appUpdateSchema);
 const Blog = mongoose.model("Blog", blogSchema);
 const Testimonial = mongoose.model("Testimonial", testimonialSchema);
+const reportSchema = new mongoose.Schema({
+  testimonialId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  reporterId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  reason: { type: String, required: true, maxlength: 500 },
+}, { timestamps: true });
+reportSchema.index({ testimonialId: 1, reporterId: 1 }, { unique: true });
+const ContentReport = mongoose.model("ContentReport", reportSchema);
 const ContentVideo = mongoose.model("ContentVideo", videoSchema);
 
 function normalizeEmail(email) {
@@ -420,6 +428,7 @@ function publicBlog(blog) {
 
 function publicTestimonial(item) {
   return {
+    authorId: item.userId ? crypto.createHash("sha256").update(String(item.userId)).digest("hex") : "",
     id: String(item._id),
     name: item.name,
     profileImageUrl: item.profileImageUrl || "",
@@ -862,6 +871,7 @@ app.get(
 
 app.post(
   "/api/testimonials",
+  authenticate,
   asyncRoute(async (req, res) => {
     const error = requireFields(req.body, ["name", "review"]);
     if (error) return res.status(400).json({ error });
@@ -870,6 +880,7 @@ app.post(
       return res.status(400).json({ error: "Review must be 10-1200 characters" });
     }
     const testimonial = await Testimonial.create({
+      userId: req.user._id,
       name: String(req.body.name).trim(),
       profileImageUrl: String(req.body.profileImageUrl || "").trim(),
       rating: Math.max(1, Math.min(5, Number(req.body.rating || 5))),
@@ -991,6 +1002,37 @@ app.post(
     res.json({ ok: true });
   }),
 );
+
+app.delete("/api/me", authenticate, asyncRoute(async (req, res) => {
+  if (!await bcrypt.compare(String(req.body.password || ""), req.user.passwordHash)) {
+    return res.status(403).json({ error: "Incorrect password" });
+  }
+  // A transaction prevents partial deletion. MongoDB must run as a replica set.
+  await mongoose.connection.transaction(async (session) => {
+    const reviews = await Testimonial.find({ userId: req.user._id }).session(session).select("_id");
+    await ContentReport.deleteMany({ $or: [{ reporterId: req.user._id },
+      { testimonialId: { $in: reviews.map(item => item._id) } }] }).session(session);
+    await Testimonial.deleteMany({ userId: req.user._id }).session(session);
+    await Order.deleteMany({ userId: req.user._id }).session(session);
+    await Purchase.deleteMany({ userId: req.user._id }).session(session);
+    await Session.deleteMany({ userId: req.user._id }).session(session);
+    await User.deleteOne({ _id: req.user._id }).session(session);
+  });
+  res.json({ deleted: true });
+}));
+
+app.post("/api/testimonials/:id/report", authenticate, asyncRoute(async (req, res) => {
+  const reason = String(req.body.reason || "").trim();
+  if (reason.length < 3 || reason.length > 500) return res.status(400).json({ error: "Provide a reason between 3 and 500 characters" });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Review not found" });
+  const item = await Testimonial.findById(req.params.id);
+  if (!item) return res.status(404).json({ error: "Review not found" });
+  await ContentReport.updateOne({ testimonialId: item._id, reporterId: req.user._id },
+    { $set: { reason } }, { upsert: true });
+  item.status = "pending";
+  await item.save();
+  res.json({ reported: true });
+}));
 
 app.get(
   "/api/me",
@@ -1211,6 +1253,7 @@ app.get(
       Testimonial.find().sort({ createdAt: -1 }),
       ContentVideo.find().sort({ publishedAt: -1 }),
     ]);
+    const reports = await ContentReport.find().sort({ createdAt: 1 });
     const paymentsTotal = orders.reduce((sum, order) => sum + Number(order.price || 0), 0);
     res.json({
       users: users.map(publicUser),
@@ -1219,7 +1262,9 @@ app.get(
       payments: orders.map(publicOrder),
       appUpdate: publicAppUpdate(appUpdate),
       blogs: blogs.map(publicBlog),
-      testimonials: testimonials.map(publicTestimonial),
+      testimonials: testimonials.map(item => ({ ...publicTestimonial(item),
+        reports: reports.filter(report => String(report.testimonialId) === String(item._id))
+          .map(report => ({ reason: report.reason, createdAt: report.createdAt })) })),
       videos: videos.map(publicVideo),
       stats: {
         users: users.length,
